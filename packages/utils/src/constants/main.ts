@@ -1,21 +1,29 @@
 export const SHORT_DOMAIN = "dub.sh";
 
+// Self-hosting: NEXT_PUBLIC_APP_DOMAIN (bare hostname, e.g. "app.example.com" or
+// a Railway domain) makes the deployment's own domain the app/dashboard domain.
+// Unset in dub.co's own envs, so the original dub.co behavior is preserved.
+export const SELF_HOSTED_APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN;
+
 export const APP_HOSTNAMES = new Set([
   "app.dub.co",
   "preview.dub.co",
   "localhost:8888",
   "localhost",
+  ...(SELF_HOSTED_APP_DOMAIN ? [SELF_HOSTED_APP_DOMAIN] : []),
 ]);
 
-export const APP_DOMAIN =
-  process.env.NEXT_PUBLIC_VERCEL_ENV === "production"
+export const APP_DOMAIN = SELF_HOSTED_APP_DOMAIN
+  ? `https://${SELF_HOSTED_APP_DOMAIN}`
+  : process.env.NEXT_PUBLIC_VERCEL_ENV === "production"
     ? "https://app.dub.co"
     : process.env.NEXT_PUBLIC_VERCEL_ENV === "preview"
       ? "https://preview.dub.co"
       : "http://localhost:8888";
 
-export const APP_DOMAIN_WITH_NGROK =
-  process.env.NEXT_PUBLIC_VERCEL_ENV === "production"
+export const APP_DOMAIN_WITH_NGROK = SELF_HOSTED_APP_DOMAIN
+  ? `https://${SELF_HOSTED_APP_DOMAIN}`
+  : process.env.NEXT_PUBLIC_VERCEL_ENV === "production"
     ? "https://app.dub.co"
     : process.env.NEXT_PUBLIC_VERCEL_ENV === "preview"
       ? process.env.VERCEL_URL
