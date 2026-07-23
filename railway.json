@@ -3,7 +3,7 @@
   "build": {
     "builder": "NIXPACKS",
     "buildCommand": "DATABASE_URL=\"$DATABASE_URL_BUILD\" pnpm --filter web prisma:push && NODE_OPTIONS=--max-old-space-size=8192 DATABASE_URL=\"$DATABASE_URL_BUILD\" pnpm build",
-    "watchPatterns": ["**", "!railway/**"]
+    "watchPatterns": ["**", "!railway/**", "!docs/**", "!**/*.md"]
   },
   "deploy": {
     "startCommand": "pnpm --filter web start",

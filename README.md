@@ -1,103 +1,30 @@
-<a href="https://dub.co">
-  <img alt="Dub is the modern, open-source link attribution platform for short links, conversion tracking, and affiliate programs." src="https://github.com/user-attachments/assets/42cf0705-f5a2-4200-bc4a-c5acf0ba9e15">
-</a>
+# Dub on Railway
 
-<h3 align="center">Dub</h3>
+A Railway-ready fork of [Dub](https://github.com/dubinc/dub), the open-source link management platform (short links, conversion analytics, QR codes, and affiliate/partner programs). It deploys the full Dub app as a three-service Railway project: the Dub web app, MySQL, and a PlanetScale-compatible HTTP proxy, wired together and verified to build and run on Railway.
 
-<p align="center">
-    The open-source link attribution platform.
-    <br />
-    <a href="https://dub.co"><strong>Learn more »</strong></a>
-    <br />
-    <br />
-    <a href="#introduction"><strong>Introduction</strong></a> ·
-    <a href="#tech-stack"><strong>Tech Stack</strong></a> ·
-    <a href="#self-hosting"><strong>Self-hosting</strong></a> ·
-    <a href="#contributing"><strong>Contributing</strong></a>
-</p>
+> This fork exists to make Dub deployable on Railway. For what Dub is and its full product documentation, see the [upstream repository](https://github.com/dubinc/dub) and [dub.co](https://dub.co). The original Dub README is preserved at [docs/dub-upstream-readme.md](docs/dub-upstream-readme.md).
 
-<p align="center">
-  <a href="https://twitter.com/dubdotco">
-    <img src="https://img.shields.io/twitter/follow/dubdotco?style=flat&label=%40dubdotco&logo=twitter&color=0bf&logoColor=fff" alt="Twitter" />
-  </a>
-  <a href="https://news.ycombinator.com/item?id=32939407"><img src="https://img.shields.io/badge/Hacker%20News-255-%23FF6600" alt="Hacker News"></a>
-  <a href="https://github.com/dubinc/dub/blob/main/LICENSE.md">
-    <img src="https://img.shields.io/github/license/dubinc/dub?label=license&logo=github&color=f80&logoColor=fff" alt="License" />
-  </a>
-</p>
+## Deploy
 
-<br/>
+Read the [deployment guide](docs/railway-template-page.md) first. It lists the free-tier accounts and keys you need (Upstash, Tinybird, storage, and one login method) and walks through the setup. For architecture, environment variables, and Railway-specific notes, see [docs/RAILWAY.md](docs/RAILWAY.md).
 
-## Introduction
+## What this fork changes
 
-Dub is the modern, open-source link attribution platform for [short links](https://dub.co/home), [conversion tracking](https://dub.co/analytics), and [affiliate programs](https://dub.co/partners).
+Minimal, config-focused changes on top of upstream Dub (pinned at commit `05c50b0`):
 
-Our platform powers 100M+ clicks and 2M+ links monthly, and is used by world-class marketing teams from companies like Twilio, Buffer, Framer, Perplexity, Vercel, Laravel, and [more](https://dub.co/customers).
+- **Railway service config**: a root `railway.json` for the web app and `railway/ps-http-sim/` (Dockerfile + `railway.json`) for the proxy.
+- **`next` bumped to `15.5.21`** across the workspace packages, because Railway's build scanner blocks the older flagged CVE.
+- **`packages/utils/src/constants/main.ts`**: `NEXT_PUBLIC_APP_DOMAIN` now makes the deployment's own domain the app/dashboard domain, so self-hosted deployments work on any domain (unset preserves upstream dub.co behavior).
+- **`apps/web/vercel.json` removed** (Vercel-only).
 
-## Tech Stack
+Everything else is stock Dub.
 
-- [Next.js](https://nextjs.org/) – framework
-- [TypeScript](https://www.typescriptlang.org/) – language
-- [Tailwind](https://tailwindcss.com/) – CSS
-- [Prisma](https://www.prisma.io/) – ORM
-- [Upstash](https://upstash.com/) – redis
-- [Tinybird](https://tinybird.com/) – analytics
-- [PlanetScale](https://planetscale.com/) – database
-- [NextAuth.js](https://next-auth.js.org/) – auth
-- [BoxyHQ](https://boxyhq.com/enterprise-sso) – SSO/SAML
-- [Turborepo](https://turbo.build/repo) – monorepo
-- [Stripe](https://stripe.com/) – payments
-- [Resend](https://resend.com/) – emails
-- [Vercel](https://vercel.com/) – deployments
+## Docs
 
-## Self-Hosting
-
-You can self-host Dub for greater control over your data and design. [Read this guide](https://dub.co/docs/self-hosting/guide) to learn more.
-
-## Contributing
-
-We love our contributors! Here's how you can contribute:
-
-- [Open an issue](https://github.com/dubinc/dub/issues) if you believe you've encountered a bug.
-- Follow the [local development guide](https://dub.co/docs/local-development) to get your local dev environment set up.
-- Make a [pull request](https://github.com/dubinc/dub/pull) to add new features/make quality-of-life improvements/fix bugs.
-
-### Recommended Versions
-
-| Package | Version  |
-| ------- | -------- |
-| node    | v23.11.0 |
-| pnpm    | 9.15.9   |
-
-### Common Local Development Issues
-
-- `The table <table-name> does not exist in the current database.` - Run `pnpm prisma:push` push the state of the Prisma schema file to the database without using migrations files.
-- The project is not building correctly locally - verify your versions of `node` and `pnpm` match the recommended versions above. Delete all `node_modules`, `.next`, and `.turbo` directories in the `apps` and `packages` directory. You may now reinstall `node_modules` by running `pnpm install` and attempt to rebuild the project with `pnpm build`.
-
-### Dev Seed Script
-
-This script seeds the database with development data for testing and development purposes.
-
-**Basic seeding (adds data without deleting existing data):**
-
-```bash
-cd apps/web
-pnpm run script dev/seed
-```
-
-**Truncate database before seeding (deletes all existing data first):**
-
-```bash
-cd apps/web
-pnpm run script dev/seed --truncate
-```
-
-When using `--truncate`, the script will ask for confirmation before deleting any data.
-
-## Repo Activity
-
-![Dub repo activity – generated by Axiom](https://repobeats.axiom.co/api/embed/6ac4c94a89ea20e2e10032b932a128b6d8442e66.svg "Repobeats analytics image")
+- [docs/railway-template-page.md](docs/railway-template-page.md): deployment guide (accounts, keys, step-by-step setup).
+- [docs/RAILWAY.md](docs/RAILWAY.md): architecture, environment variables, and Railway-specific gotchas.
+- [docs/dub-upstream-readme.md](docs/dub-upstream-readme.md): the original Dub README.
 
 ## License
 
-Dub Technologies, Inc. is a commercial open-source company, which means some parts of this open-source repository require a commercial license. The concept is called "Open Core" where the core technology (99%) is fully open source, licensed under [AGPLv3](https://opensource.org/license/agpl-v3) and the last 1% is covered under a commercial license (["/ee" Enterprise Edition](<https://github.com/dubinc/dub/tree/ee/apps/web/app/(ee)>)) which we believe is entirely relevant for larger organisations that require enterprise features. Enterprise features are built by the core engineering team of Dub Technologies, Inc., which is hired full-time.
+Same as upstream Dub: [AGPL-3.0](LICENSE.md).
