@@ -47,6 +47,8 @@ Getting started:
 
 To use your own domain, add it to the Dub service and set `NEXT_PUBLIC_APP_DOMAIN` to that hostname; `NEXTAUTH_URL` follows automatically. The branded short-link domains you hand out to users are added inside Dub itself, separately from this one.
 
+Already deployed this template before 19 November 2026? That deploy is on an older commit and does not update itself: a template-deployed service is connected to this repository but does not redeploy when it changes. In the Dub service, open Deployments and choose **Deploy Latest Commit** (plain Redeploy re-runs the same commit, so it will not pick the fix up). The build no longer reads a `DATABASE_URL_BUILD` variable, so delete that one from the service if it is still there, and add `/api/health` as the service's healthcheck path. Your data is untouched: the schema sync on boot refuses rather than drops when a change would lose data.
+
 Worth knowing before you commit to it:
 
 - This is a Railway-ready fork of Dub, not an auto-updating deployment of the latest upstream release.
