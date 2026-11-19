@@ -8,7 +8,7 @@ build and run on Railway (Node 23.11.0 / pnpm 9.15.9). Deployed and serving as a
 
 | Service | Source | Role |
 |---|---|---|
-| **web** | this repo, repo root (Nixpacks) | the Dub Next.js app (`apps/web`) |
+| **web** | this repo, repo root (`Dockerfile`) | the Dub Next.js app (`apps/web`) |
 | **MySQL** | Railway MySQL (one-click) | primary database (db name `railway`) |
 | **planetscale-proxy** | this repo, **root dir `railway/ps-http-sim`** (Dockerfile) | HTTP shim so Dub's `@planetscale/database` driver can talk to plain MySQL |
 
@@ -19,9 +19,9 @@ Dub talks to the database two ways: Prisma over the MySQL wire protocol
 ### planetscale-proxy
 
 The upstream `ghcr.io/mattrobenolt/ps-http-sim` image is a **shell-less scratch
-image**, so `railway/ps-http-sim/Dockerfile` copies its static binary onto alpine.
-Its `railway/ps-http-sim/railway.json` sets the start command (Railway execs start
-commands as literal argv, so it's wrapped in `sh -c '…'` to expand the env vars):
+image**, so `railway/ps-http-sim/Dockerfile` copies its static binary onto alpine
+and sets the ENTRYPOINT (Railway execs start commands as literal argv, so it's
+wrapped in `sh -c '…'` to expand the env vars):
 
 ```
 sh -c 'exec /usr/local/bin/ps-http-sim -listen-addr=0.0.0.0 -listen-port=3900 \
@@ -35,19 +35,40 @@ Key facts:
 - It binds `0.0.0.0` (it **can't** bind `::` - panics). Reachable on Railway
   environments created after 2025-10-16 (dual-stack); a legacy IPv6-only environment
   would need a socat `::`→IPv4 bridge.
-- **Set its Root Directory to `railway/ps-http-sim` in the dashboard** - the CLI
-  can't set root dir, and without it the proxy inherits the web app's `railway.json`.
+- **Set its Root Directory to `railway/ps-http-sim`** - the CLI can't set root dir,
+  but a template does carry it. Without it the proxy builds the web app's
+  Dockerfile instead.
 
-## Build / deploy (handled by the root `railway.json`)
+## Build / deploy (handled by the root `Dockerfile`)
 
-- Build: `DATABASE_URL="$DATABASE_URL_BUILD" pnpm --filter web prisma:push && NODE_OPTIONS=--max-old-space-size=8192 DATABASE_URL="$DATABASE_URL_BUILD" pnpm build`
+A Railway template cannot carry a build command - the only build setting a template
+holds is the builder - and Config as Code stops being read on 2026-12-01. So the
+build lives in the `Dockerfile` and the startup work lives in the image's
+entrypoint, leaving the template with nothing to carry but `builder: DOCKERFILE`.
+
+- Build: start a throwaway MariaDB inside the build layer, `pnpm --filter web
+  prisma:push` into it, then `pnpm build` with an 8 GB heap.
   - The 8 GB heap avoids an OOM in `next build`.
   - `prisma db push` runs **in the build** so `generateStaticParams` DB queries hit
     existing (empty) tables instead of failing.
-  - The build overrides `DATABASE_URL` inline with the **public** URL
-    (`DATABASE_URL_BUILD`) because the builder can't reach the private network;
-    runtime keeps the private `DATABASE_URL`.
-- Start: `pnpm --filter web start`. Node pinned via `.nvmrc` (23.11.0).
+  - The database is local to the build because the Railway builder can't reach the
+    private network, and the alternative (MySQL's public TCP proxy, via a
+    `DATABASE_URL_BUILD` variable) puts a public hostname in a service-to-service
+    variable, which fails Railway's private networking guideline and breaks the
+    build whenever that proxy is absent. The queries hit empty tables either way.
+    Debian ships MariaDB rather than MySQL; `prisma db push` takes Dub's schema on
+    10.11 including the `@@fulltext` indexes, verified 2026-11-19.
+  - A second stage copies `/app` forward so the build's database server does not
+    ship in the runtime image.
+  - Railway only passes a variable into a Dockerfile build if the Dockerfile
+    declares an `ARG` for it. Anything the build reads, including
+    `NEXT_PUBLIC_APP_DOMAIN` (inlined into the client bundle) and the Stripe /
+    Upstash Vector dummies, needs a line there.
+  - `.next/cache` is 4 GB of webpack cache that nothing reads at runtime; it is
+    removed in the layer that creates it, or the image ships it.
+- Start: `railway/web-entrypoint.sh` pushes the schema over the private
+  `DATABASE_URL`, then execs `pnpm --filter web start`. Node pinned by the base
+  image (23.11.0), matching `.nvmrc`.
 
 ## Fork patches applied
 
@@ -58,6 +79,12 @@ Key facts:
   dashboard domain (otherwise a bare domain shows "Link Not Found"). dub.co behavior
   unchanged when the var is unset.
 - **`apps/web/vercel.json` removed** (Vercel-only; cron schedules noted below).
+- **`apps/web/app/api/health/route.ts` added** - a readiness probe for the Railway
+  healthcheck. It queries both database paths (Prisma over the wire protocol and
+  the PlanetScale HTTP driver) and returns 503 if either is down, because a
+  misconfigured proxy otherwise leaves the process up with most of the app broken.
+  Set the Dub service's healthcheck path to `/api/health` only once this route is
+  on the deployed branch, or every deploy hangs on a 404 probe and then fails.
 
 ## Environment variables (web service)
 
@@ -65,7 +92,6 @@ Auto-wired references and generated secrets - **no user input needed**:
 
 ```bash
 DATABASE_URL=${{MySQL.MYSQL_URL}}                 # private, runtime
-DATABASE_URL_BUILD=${{MySQL.MYSQL_PUBLIC_URL}}    # public, build only
 PLANETSCALE_DATABASE_URL=http://root:${{MySQL.MYSQLPASSWORD}}@${{planetscale-proxy.RAILWAY_PRIVATE_DOMAIN}}:3900/${{MySQL.MYSQLDATABASE}}
 NEXT_PUBLIC_APP_DOMAIN=${{RAILWAY_PUBLIC_DOMAIN}}
 NEXTAUTH_URL=https://${{NEXT_PUBLIC_APP_DOMAIN}}
@@ -103,13 +129,24 @@ UPSTASH_VECTOR_REST_URL= ; UPSTASH_VECTOR_REST_TOKEN=
    audit` is not a reliable predictor (different DB, false positives).
 2. **Import-time SDK clients** (Stripe, Upstash Vector) throw during "Collecting page
    data" if their env is empty - set dummy non-empty values at build.
-3. **Build-time DB access:** the builder can't reach `*.railway.internal`; use the
-   public MySQL URL for the build only (see build command).
-4. **Proxy start command** is exec'd as literal argv (no shell expansion) - wrap in
-   `sh -c`. The proxy inherits the web `railway.json` unless its root dir is set.
-5. **Secrets in image layers:** Nixpacks bakes all vars as ARG/ENV (BuildKit warns).
-   Keep the project private; rotate secrets.
-6. **Redeploy ≠ latest commit** - it re-runs a deployment's exact commit; push or use
+3. **A template does not inherit the MySQL TCP proxy** it was generated from.
+   `MYSQL_PUBLIC_URL` is built from `RAILWAY_TCP_PROXY_DOMAIN`/`_PORT`, which only
+   exist once the service has a proxy, so without one it resolves to
+   `mysql://root:pw@:/railway`. The old build consumed that as
+   `DATABASE_URL_BUILD` and died on Prisma `P1013: empty host in database URL`,
+   which is what took the published template to 0% health (confirmed on a cold
+   deploy 2026-11-19). The build no longer depends on it, but the shape of the
+   trap is worth keeping: Railway's own `mysql` template declares
+   `networking.tcpProxies: {"3306": {}}` and a generated one does not.
+4. **Build-time DB access:** the builder can't reach `*.railway.internal`, so the
+   build brings up its own database rather than borrowing the deployed one (see
+   the build section).
+5. **Proxy start command** is exec'd as literal argv (no shell expansion), so it is
+   baked into `railway/ps-http-sim/Dockerfile` as an `sh -c` ENTRYPOINT rather than
+   set as a Railway start command.
+6. **Secrets in image layers:** every build-time variable lands in image history as
+   an ARG (BuildKit warns). Keep the project private; rotate secrets.
+7. **Redeploy ≠ latest commit** - it re-runs a deployment's exact commit; push or use
    "Deploy Latest Commit". `railway-template` is the repo's default branch.
 
 ## Known limitations / caveats
